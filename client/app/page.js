@@ -33,6 +33,9 @@ export default function Page() {
   const [nameModalOpen, setNameModalOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [nameError, setNameError] = useState("");
+  const [messages, setMessages] = useState([]); // { id, from: 'me'|'them', text }
+  const [chatInput, setChatInput] = useState("");
+  const chatListRef = useRef(null);
 
   const socketRef = useRef(null);
   const peerRef = useRef(null);
@@ -82,6 +85,11 @@ export default function Page() {
   useEffect(() => {
     if (username) localStorage.setItem("rc_coins", String(coins));
   }, [coins, username]);
+
+  useEffect(() => {
+    const el = chatListRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages]);
 
   useEffect(() => {
     return () => {
@@ -191,6 +199,8 @@ export default function Page() {
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
     partnerRef.current = null;
     setNeedsTapToPlay(false);
+    setMessages([]);
+    setChatInput("");
   }
 
   async function createPeer(peerId, initiator) {
@@ -229,9 +239,39 @@ export default function Page() {
       setStatus("connected");
       startCameraWatchdog(remote, myRound);
     });
+    p.on("data", (raw) => {
+      if (myRound !== roundRef.current) return;
+      try {
+        const msg = JSON.parse(raw.toString());
+        if (msg?.type === "msg" && typeof msg.text === "string") {
+          const text = msg.text.slice(0, 500);
+          setMessages((m) => [
+            ...m.slice(-49),
+            { id: `${Date.now()}-${Math.random()}`, from: "them", text },
+          ]);
+        }
+      } catch {}
+    });
     p.on("error", (err) => { console.warn("peer error", err); });
     p.on("close", () => {});
     p.on("connect", () => console.log("peer connected"));
+  }
+
+  function sendMessage(e) {
+    e?.preventDefault?.();
+    const text = chatInput.trim();
+    if (!text || status !== "connected" || !peerRef.current) return;
+    try {
+      peerRef.current.send(JSON.stringify({ type: "msg", text }));
+    } catch (err) {
+      console.warn("send failed", err);
+      return;
+    }
+    setMessages((m) => [
+      ...m.slice(-49),
+      { id: `${Date.now()}-${Math.random()}`, from: "me", text },
+    ]);
+    setChatInput("");
   }
 
   async function connectSocket() {
@@ -426,6 +466,59 @@ export default function Page() {
               <button onClick={block} className="btn btn-ghost" style={{ padding: "6px 12px", fontSize: 12 }}>
                 block
               </button>
+            </div>
+          )}
+
+          {status === "connected" && (
+            <div className="absolute inset-x-0 bottom-0 p-3 flex flex-col gap-2 pointer-events-none">
+              <div
+                ref={chatListRef}
+                className="flex flex-col gap-1.5 max-h-40 overflow-y-auto pr-2 pointer-events-auto"
+                style={{ maskImage: "linear-gradient(to top, black 80%, transparent)", WebkitMaskImage: "linear-gradient(to top, black 80%, transparent)" }}
+              >
+                {messages.map((m) => (
+                  <div
+                    key={m.id}
+                    className={`max-w-[85%] px-3 py-1.5 text-sm leading-snug break-words ${m.from === "me" ? "self-end" : "self-start"}`}
+                    style={{
+                      background: m.from === "me" ? "var(--tomato)" : "var(--paper)",
+                      color: m.from === "me" ? "var(--paper)" : "var(--ink)",
+                      border: "2px solid var(--line)",
+                      borderRadius: 6,
+                      boxShadow: "2px 2px 0 0 var(--line)",
+                      fontFamily: "Space Grotesk, sans-serif",
+                      fontWeight: 500,
+                    }}
+                  >
+                    {m.text}
+                  </div>
+                ))}
+              </div>
+              <form onSubmit={sendMessage} className="flex gap-2 pointer-events-auto pr-28 md:pr-0">
+                <input
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  placeholder="say something…"
+                  maxLength={500}
+                  className="flex-1 px-3 py-2 text-sm outline-none"
+                  style={{
+                    background: "rgba(15,13,12,0.7)",
+                    color: "var(--paper)",
+                    border: "2px solid var(--paper)",
+                    borderRadius: 4,
+                    fontFamily: "Space Grotesk, sans-serif",
+                    backdropFilter: "blur(6px)",
+                  }}
+                />
+                <button
+                  type="submit"
+                  disabled={!chatInput.trim()}
+                  className="btn btn-primary"
+                  style={{ padding: "0.4rem 0.9rem", fontSize: 13 }}
+                >
+                  send
+                </button>
+              </form>
             </div>
           )}
         </div>
