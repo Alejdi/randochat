@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { genUsername } from "@/lib/username";
+import { COUNTRIES, flag, countryName } from "@/lib/countries";
 
 const SIGNAL_URL = process.env.NEXT_PUBLIC_SIGNAL_URL || "http://localhost:4000";
 
@@ -37,6 +38,9 @@ export default function Page() {
   const [messages, setMessages] = useState([]); // { id, from: 'me'|'them', text }
   const [chatInput, setChatInput] = useState("");
   const chatListRef = useRef(null);
+  const [filter, setFilter] = useState("any"); // "any" | "AL" | "DE" | ...
+  const [countryModalOpen, setCountryModalOpen] = useState(false);
+  const [countrySearch, setCountrySearch] = useState("");
 
   const socketRef = useRef(null);
   const peerRef = useRef(null);
@@ -60,6 +64,8 @@ export default function Page() {
     }
     const c = Number(localStorage.getItem("rc_coins"));
     if (!Number.isNaN(c) && c > 0) setCoins(c);
+    const savedFilter = localStorage.getItem("rc_filter");
+    if (savedFilter) setFilter(savedFilter);
     // Open the signaling socket immediately so the presence counter is live
     // before the user presses Start.
     connectSocket();
@@ -259,6 +265,22 @@ export default function Page() {
     p.on("connect", () => console.log("peer connected"));
   }
 
+  function applyFilter(next) {
+    setFilter(next);
+    localStorage.setItem("rc_filter", next);
+    try { socketRef.current?.emit("set-filter", { filter: next }); } catch {}
+    setCountryModalOpen(false);
+    setCountrySearch("");
+  }
+
+  const filteredCountries = useMemo(() => {
+    const q = countrySearch.trim().toLowerCase();
+    if (!q) return COUNTRIES;
+    return COUNTRIES.filter(
+      (c) => c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q)
+    );
+  }, [countrySearch]);
+
   async function share() {
     const url = typeof window !== "undefined" ? window.location.origin : "";
     const data = { title: "RandoChat", text: "random video chat, try it →", url };
@@ -326,7 +348,8 @@ export default function Page() {
     });
     s.on("connect", () => {
       const u = localStorage.getItem("rc_user");
-      if (u) s.emit("hello", { username: u });
+      const f = localStorage.getItem("rc_filter") || "any";
+      s.emit("hello", { username: u || undefined, filter: f });
     });
     return s;
   }
@@ -412,9 +435,17 @@ export default function Page() {
         </div>
       </header>
 
-      <div className="flex items-center justify-between px-4 pb-2 z-10">
+      <div className="flex items-center justify-between px-4 pb-2 z-10 gap-2 flex-wrap">
         <button onClick={openNameModal} className="stamp" title="change name">
           @{username || "pick a name"}
+        </button>
+        <button
+          onClick={() => setCountryModalOpen(true)}
+          className="stamp"
+          style={{ transform: "rotate(-0.8deg)" }}
+          title="match by country"
+        >
+          {filter === "any" ? "🌍 any country" : `${flag(filter)} ${countryName(filter)}`}
         </button>
         <span className="stamp" style={{ transform: "rotate(1.5deg)" }}>🪙 {coins} coins</span>
       </div>
@@ -607,6 +638,66 @@ export default function Page() {
           )}
         </div>
       </footer>
+
+      {countryModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{ background: "rgba(15,13,12,0.88)" }}>
+          <div className="card w-full max-w-sm p-5 flex flex-col" style={{ transform: "rotate(-0.5deg)", maxHeight: "80vh" }}>
+            <div className="font-display text-2xl font-black italic mb-1">match by country</div>
+            <div className="scribble text-xs mb-3">pick a country or keep it global</div>
+            <input
+              autoFocus
+              value={countrySearch}
+              onChange={(e) => setCountrySearch(e.target.value)}
+              placeholder="search…"
+              className="px-3 py-2 text-sm outline-none mb-3"
+              style={{
+                background: "#fff",
+                color: "var(--ink)",
+                border: "2px solid var(--line)",
+                borderRadius: 4,
+                fontFamily: "Space Grotesk, sans-serif",
+              }}
+            />
+            <div className="flex-1 overflow-y-auto pr-1" style={{ minHeight: 0 }}>
+              <button
+                onClick={() => applyFilter("any")}
+                className={`w-full text-left px-3 py-2 mb-1 text-sm flex items-center gap-2 ${filter === "any" ? "font-bold" : ""}`}
+                style={{
+                  background: filter === "any" ? "var(--tomato)" : "transparent",
+                  color: filter === "any" ? "var(--paper)" : "var(--ink)",
+                  border: "2px solid var(--line)",
+                  borderRadius: 4,
+                }}
+              >
+                <span>🌍</span> <span>any country</span>
+              </button>
+              {filteredCountries.map((c) => (
+                <button
+                  key={c.code}
+                  onClick={() => applyFilter(c.code)}
+                  className={`w-full text-left px-3 py-2 mb-1 text-sm flex items-center gap-2 ${filter === c.code ? "font-bold" : ""}`}
+                  style={{
+                    background: filter === c.code ? "var(--tomato)" : "transparent",
+                    color: filter === c.code ? "var(--paper)" : "var(--ink)",
+                    border: "2px solid var(--line)",
+                    borderRadius: 4,
+                  }}
+                >
+                  <span>{flag(c.code)}</span>
+                  <span>{c.name}</span>
+                  <span className="ml-auto text-xs opacity-50">{c.code}</span>
+                </button>
+              ))}
+              {filteredCountries.length === 0 && (
+                <div className="text-center text-sm py-6" style={{ color: "#666" }}>no matches</div>
+              )}
+            </div>
+            <button onClick={() => { setCountryModalOpen(false); setCountrySearch(""); }} className="btn btn-paper mt-3" style={{ padding: "0.7rem" }}>
+              close
+            </button>
+          </div>
+        </div>
+      )}
 
       {nameModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{ background: "rgba(15,13,12,0.88)" }}>
