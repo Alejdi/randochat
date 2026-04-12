@@ -257,6 +257,20 @@ export default function Page() {
     p.on("connect", () => console.log("peer connected"));
   }
 
+  async function share() {
+    const url = typeof window !== "undefined" ? window.location.origin : "";
+    const data = { title: "RandoChat", text: "random video chat, try it →", url };
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try { await navigator.share(data); return; } catch { /* user cancelled or unsupported */ }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast("link copied");
+    } catch {
+      showToast("couldn't copy — long-press the URL");
+    }
+  }
+
   function sendMessage(e) {
     e?.preventDefault?.();
     const text = chatInput.trim();
@@ -382,6 +396,9 @@ export default function Page() {
             <span className="inline-block w-2 h-2 rounded-full mr-1 blip" style={{ background: "var(--mint)" }} />
             {online == null ? "…" : online.toLocaleString()} online
           </span>
+          <button onClick={share} className="stamp" style={{ transform: "rotate(1deg)", cursor: "pointer" }} title="share randochat">
+            ↗ share
+          </button>
           <span className={tagClass}>{tagText}</span>
         </div>
       </header>
