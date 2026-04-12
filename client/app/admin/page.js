@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 const TABS = [
   { id: "overview", label: "overview" },
+  { id: "live",     label: "live"     },
   { id: "sessions", label: "sessions" },
   { id: "reports",  label: "reports"  },
   { id: "bans",     label: "bans"     },
@@ -45,6 +46,8 @@ export default function AdminDashboard() {
   const [sessions, setSessions] = useState([]);
   const [reports, setReports] = useState([]);
   const [bans, setBans] = useState([]);
+  const [live, setLive] = useState(null);
+  const [liveError, setLiveError] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
@@ -52,11 +55,12 @@ export default function AdminDashboard() {
     setLoading(true);
     setErr("");
     try {
-      const [s, ss, r, b] = await Promise.all([
+      const [s, ss, r, b, l] = await Promise.all([
         fetch("/api/admin/stats"),
         fetch("/api/admin/sessions"),
         fetch("/api/admin/reports"),
         fetch("/api/admin/bans"),
+        fetch("/api/admin/live"),
       ]);
       if (s.status === 401 || ss.status === 401) {
         router.push("/admin/login");
@@ -67,6 +71,14 @@ export default function AdminDashboard() {
       setSessions(ssj.sessions || []);
       setReports(rj.reports || []);
       setBans(bj.bans || []);
+      if (l.ok) {
+        setLive(await l.json());
+        setLiveError("");
+      } else {
+        const lj = await l.json().catch(() => ({}));
+        setLiveError(lj.error || `live fetch ${l.status}`);
+        setLive(null);
+      }
     } catch (e) {
       setErr(String(e?.message || e));
     } finally {
@@ -76,9 +88,10 @@ export default function AdminDashboard() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    const t = setInterval(load, 15_000);
+    const interval = tab === "live" ? 4_000 : 15_000;
+    const t = setInterval(load, interval);
     return () => clearInterval(t);
-  }, [load]);
+  }, [load, tab]);
 
   async function banIp(ip, reason = "manual") {
     if (!ip) return;
@@ -160,6 +173,82 @@ export default function AdminDashboard() {
             </div>
           </div>
         </>
+      )}
+
+      {tab === "live" && (
+        <div>
+          {liveError && (
+            <div className="card p-3 mb-3" style={{ color: "var(--tomato-dark)" }}>
+              live feed error: {liveError}
+              <div className="text-xs mt-1 opacity-70">
+                make sure SIGNAL_URL and ADMIN_RELAY_SECRET are set on Vercel, and the same secret is set on your signaling server, then restart both.
+              </div>
+            </div>
+          )}
+
+          {live && (
+            <div className="flex gap-3 flex-wrap mb-3 text-sm">
+              <span className="tag tag-live">● {live.sessions?.length || 0} connected</span>
+              <span className="tag">queue {live.queue_size ?? 0}</span>
+              <span className="tag">bans {live.active_bans ?? 0}</span>
+              <span className="opacity-50 text-xs self-center">updated {live.now ? new Date(live.now).toLocaleTimeString() : "—"}</span>
+            </div>
+          )}
+
+          <div className="card p-0 overflow-auto">
+            <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: "#eee", color: "var(--ink)", textAlign: "left" }}>
+                  <th className="px-3 py-2">state</th>
+                  <th className="px-3 py-2">user</th>
+                  <th className="px-3 py-2">country</th>
+                  <th className="px-3 py-2">ip</th>
+                  <th className="px-3 py-2">uptime</th>
+                  <th className="px-3 py-2">matches</th>
+                  <th className="px-3 py-2">skips</th>
+                  <th className="px-3 py-2">partner</th>
+                  <th className="px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody style={{ color: "var(--ink)" }}>
+                {(live?.sessions || []).map((s) => (
+                  <tr key={s.sid} style={{ borderTop: "1px solid #ccc", background: "#fff" }}>
+                    <td className="px-3 py-2">
+                      <span className={
+                        s.state === "matched" ? "tag tag-live" :
+                        s.state === "searching" ? "tag tag-warm" :
+                        "tag tag-idle"
+                      }>{s.state}</span>
+                    </td>
+                    <td className="px-3 py-2">{s.username || <span className="opacity-50">—</span>}</td>
+                    <td className="px-3 py-2">{s.country || "—"}</td>
+                    <td className="px-3 py-2 font-mono text-xs">{s.ip || "—"}</td>
+                    <td className="px-3 py-2">{fmtDur(s.uptime_ms)}</td>
+                    <td className="px-3 py-2">{s.matches}</td>
+                    <td className="px-3 py-2">{s.skips}</td>
+                    <td className="px-3 py-2 font-mono text-xs">{s.partner ? `${s.partner.slice(0, 8)}…` : "—"}</td>
+                    <td className="px-3 py-2">
+                      {s.ip && (
+                        <button
+                          onClick={() => banIp(s.ip, `live kick ${s.username || s.sid.slice(0, 6)}`)}
+                          className="btn btn-primary"
+                          style={{ padding: "4px 10px", fontSize: 11 }}
+                        >
+                          ban
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {(live?.sessions || []).length === 0 && (
+                  <tr><td colSpan={9} className="px-3 py-6 text-center" style={{ color: "#666" }}>
+                    {liveError ? "no live feed" : "nobody connected right now"}
+                  </td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
 
       {tab === "sessions" && (
@@ -298,7 +387,9 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      <div className="mt-6 text-xs opacity-50">auto-refresh every 15s</div>
+      <div className="mt-6 text-xs opacity-50">
+        auto-refresh {tab === "live" ? "every 4s" : "every 15s"}
+      </div>
     </main>
   );
 }
