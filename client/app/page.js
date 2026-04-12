@@ -30,6 +30,7 @@ export default function Page() {
   const [permPrompt, setPermPrompt] = useState(null); // null | denied | error | insecure
   const [needsTapToPlay, setNeedsTapToPlay] = useState(false);
   const [online, setOnline] = useState(null);
+  const [bannedNotice, setBannedNotice] = useState(null);
   const [nameModalOpen, setNameModalOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [nameError, setNameError] = useState("");
@@ -80,6 +81,7 @@ export default function Page() {
     setUsername(clean);
     setNameModalOpen(false);
     setNameError("");
+    try { socketRef.current?.emit("hello", { username: clean }); } catch {}
   }
 
   useEffect(() => {
@@ -319,6 +321,13 @@ export default function Page() {
       setOnline(null);
     });
     s.on("presence", ({ online }) => setOnline(online));
+    s.on("banned", ({ reason }) => {
+      setBannedNotice(reason || "Your access has been restricted.");
+    });
+    s.on("connect", () => {
+      const u = localStorage.getItem("rc_user");
+      if (u) s.emit("hello", { username: u });
+    });
     return s;
   }
 
@@ -645,6 +654,16 @@ export default function Page() {
                 {username ? "save" : "let's go"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {bannedNotice && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-6" style={{ background: "rgba(15,13,12,0.95)" }}>
+          <div className="card w-full max-w-sm p-6 text-center" style={{ transform: "rotate(-0.5deg)" }}>
+            <div className="text-5xl mb-2">⛔</div>
+            <h2 className="font-display text-2xl font-black italic mb-2">banned</h2>
+            <p className="text-sm leading-relaxed" style={{ color: "#333" }}>{bannedNotice}</p>
           </div>
         </div>
       )}
