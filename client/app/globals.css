@@ -1,0 +1,169 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,700;0,9..144,900;1,9..144,400;1,9..144,700;1,9..144,900&family=Space+Grotesk:wght@400;500;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ink: #0f0d0c;
+  --paper: #f2e9d8;
+  --paper-dim: #b9ad97;
+  --tomato: #ff4d1a;
+  --tomato-dark: #cc3409;
+  --mint: #67e29a;
+  --lavender: #c7a6ff;
+  --line: #000;
+}
+
+html, body {
+  height: 100%;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-display {
+  font-family: "Fraunces", Georgia, serif;
+  font-variation-settings: "opsz" 144;
+}
+
+/* chunky solid button with offset shadow — the "not-AI" signature */
+.btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.9rem 1.4rem;
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+  font-size: 1rem;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+  background: var(--paper);
+  border: 2px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 4px 4px 0 0 var(--line);
+  transition: transform 80ms ease, box-shadow 80ms ease;
+  cursor: pointer;
+  user-select: none;
+}
+.btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0 0 var(--line);
+}
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.btn-primary { background: var(--tomato); color: var(--paper); }
+.btn-mint    { background: var(--mint);   color: var(--ink); }
+.btn-paper   { background: var(--paper);  color: var(--ink); }
+.btn-ghost   { background: transparent; color: var(--paper); border-color: var(--paper); box-shadow: 4px 4px 0 0 var(--paper); }
+.btn-ghost:active { box-shadow: 2px 2px 0 0 var(--paper); }
+
+.card {
+  background: var(--paper);
+  color: var(--ink);
+  border: 2px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 4px 4px 0 0 var(--line);
+}
+
+.tag {
+  display: inline-block;
+  padding: 2px 10px;
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.tag-live  { background: var(--mint); }
+.tag-warm  { background: var(--tomato); color: var(--paper); }
+.tag-idle  { background: var(--paper-dim); }
+
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-family: "Fraunces", serif;
+  font-style: italic;
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 2px solid var(--line);
+  border-radius: 4px;
+  transform: rotate(-1.5deg);
+}
+
+.gift {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  background: var(--paper);
+  color: var(--ink);
+  border: 2px solid var(--line);
+  border-radius: 4px;
+  box-shadow: 3px 3px 0 0 var(--line);
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 80ms ease, box-shadow 80ms ease;
+}
+.gift:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 0 var(--line); }
+.gift:disabled { opacity: 0.35; cursor: not-allowed; }
+.gift .emoji { font-size: 24px; line-height: 1; }
+.gift .cost  { font-size: 10px; opacity: 0.65; margin-top: 2px; }
+
+.pip {
+  border: 3px solid var(--paper);
+  border-radius: 4px;
+  box-shadow: 4px 4px 0 0 var(--line);
+  background: #000;
+}
+
+.scribble {
+  font-family: "Fraunces", serif;
+  font-style: italic;
+  font-weight: 400;
+  color: var(--paper-dim);
+}
+
+.grain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: radial-gradient(rgba(255,255,255,0.6) 1px, transparent 1px);
+  background-size: 3px 3px;
+  mix-blend-mode: overlay;
+}
+
+@keyframes blip {
+  0%, 100% { opacity: 0.2; }
+  50%      { opacity: 1; }
+}
+.blip { animation: blip 1.2s ease-in-out infinite; }
+
+@keyframes pop {
+  0%   { transform: scale(0.5) rotate(-8deg); opacity: 0; }
+  20%  { transform: scale(1.4) rotate(6deg);  opacity: 1; }
+  80%  { transform: scale(1.1) rotate(-2deg); opacity: 1; }
+  100% { transform: scale(0.9) rotate(0);     opacity: 0; }
+}
+.pop { animation: pop 1.4s ease-out forwards; }
