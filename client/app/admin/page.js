@@ -126,7 +126,16 @@ export default function AdminDashboard() {
           </span>
           <span className="scribble text-xs ml-2 -rotate-2 inline-block">admin</span>
         </div>
-        <div className="flex gap-2 items-center">
+        <div className="flex gap-2 items-center flex-wrap">
+          <a href="/api/admin/export?type=events" download className="btn btn-ghost" style={{ padding: "0.5rem 0.8rem", fontSize: 11 }}>
+            ⬇ events.csv
+          </a>
+          <a href="/api/admin/export?type=reports" download className="btn btn-ghost" style={{ padding: "0.5rem 0.8rem", fontSize: 11 }}>
+            ⬇ reports.csv
+          </a>
+          <a href="/api/admin/export?type=bans" download className="btn btn-ghost" style={{ padding: "0.5rem 0.8rem", fontSize: 11 }}>
+            ⬇ bans.csv
+          </a>
           <button onClick={load} className="btn btn-ghost" style={{ padding: "0.5rem 0.9rem", fontSize: 12 }}>
             {loading ? "…" : "refresh"}
           </button>

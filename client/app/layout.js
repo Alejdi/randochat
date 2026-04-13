@@ -1,8 +1,17 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "RandoChat",
-  description: "Random 1-on-1 video chat",
+  title: "RandoChat — random video chat",
+  description: "1-on-1 random video chat with strangers. pick a country or go global.",
+  applicationName: "RandoChat",
+  appleWebApp: {
+    capable: true,
+    title: "RandoChat",
+    statusBarStyle: "black-translucent",
+  },
+  formatDetection: {
+    telephone: false,
+  },
 };
 
 export const viewport = {
@@ -10,7 +19,7 @@ export const viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: "#0b0b10",
+  themeColor: "#ff4d1a",
 };
 
 export default function RootLayout({ children }) {

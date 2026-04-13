@@ -1,0 +1,19 @@
+{
+  "name": "RandoChat",
+  "short_name": "RandoChat",
+  "description": "Random 1-on-1 video chat with strangers.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f0d0c",
+  "theme_color": "#ff4d1a",
+  "orientation": "portrait-primary",
+  "categories": ["social", "entertainment"],
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
