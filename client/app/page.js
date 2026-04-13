@@ -123,18 +123,6 @@ export default function Page() {
     return () => clearTimeout(t);
   }, [status, filter]);
 
-  // Auto-give-up: after 30s of searching with no match, stop the search and
-  // surface a toast so the user isn't staring at a stale "dialing…" forever.
-  useEffect(() => {
-    if (status !== "searching") return;
-    const t = setTimeout(() => {
-      setStatus("idle");
-      socketRef.current?.emit("stop");
-      showToast("no one around. try again");
-    }, 30_000);
-    return () => clearTimeout(t);
-  }, [status, filter, showToast]);
-
   function openNameModal() {
     setNameDraft(username || genUsername());
     setNameError("");
@@ -176,6 +164,20 @@ export default function Page() {
     setToast(msg);
     setTimeout(() => setToast(""), 1800);
   }, []);
+
+  // Auto-give-up: after 30s of searching with no match, stop the search and
+  // surface a toast so the user isn't staring at a stale "dialing…" forever.
+  // NOTE: must be defined AFTER showToast because the dep array references it
+  // (const TDZ would throw on first render otherwise).
+  useEffect(() => {
+    if (status !== "searching") return;
+    const t = setTimeout(() => {
+      setStatus("idle");
+      socketRef.current?.emit("stop");
+      showToast("no one around. try again");
+    }, 30_000);
+    return () => clearTimeout(t);
+  }, [status, filter, showToast]);
 
   function clearWatchdog() {
     if (watchdogRef.current) {
