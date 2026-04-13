@@ -874,6 +874,12 @@ export default function Page() {
             </>
           )}
         </div>
+
+        <div className="flex items-center justify-center gap-4 mt-2 text-[10px] sm:text-xs" style={{ color: "var(--paper-dim)" }}>
+          <a href="/legal/terms"   style={{ color: "var(--paper-dim)" }}>terms</a>
+          <a href="/legal/privacy" style={{ color: "var(--paper-dim)" }}>privacy</a>
+          <a href="/legal/refunds" style={{ color: "var(--paper-dim)" }}>refunds</a>
+        </div>
       </footer>
 
       {coinsModalOpen && (
