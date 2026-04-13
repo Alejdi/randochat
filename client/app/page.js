@@ -41,6 +41,12 @@ export default function Page() {
   const [filter, setFilter] = useState("any"); // "any" | "AL" | "DE" | ...
   const [countryModalOpen, setCountryModalOpen] = useState(false);
   const [countrySearch, setCountrySearch] = useState("");
+  const [remoteTyping, setRemoteTyping] = useState(false);
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
+  const [searchHint, setSearchHint] = useState(false);
+  const typingTimeoutRef = useRef(null);
+  const lastTypingSentRef = useRef(0);
+  const audioCtxRef = useRef(null);
 
   const socketRef = useRef(null);
   const peerRef = useRef(null);
@@ -54,11 +60,11 @@ export default function Page() {
 
   useEffect(() => {
     const u = localStorage.getItem("rc_user");
-    if (u) {
-      setUsername(u);
-    } else {
-      // First visit: ask the user to pick a name. Pre-fill with a random
-      // suggestion so they can just hit Enter if they don't care.
+    const welcomed = localStorage.getItem("rc_welcomed");
+    if (u) setUsername(u);
+    if (!welcomed) {
+      setWelcomeOpen(true);
+    } else if (!u) {
       setNameDraft(genUsername());
       setNameModalOpen(true);
     }
@@ -71,6 +77,51 @@ export default function Page() {
     connectSocket();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function dismissWelcome() {
+    localStorage.setItem("rc_welcomed", "1");
+    setWelcomeOpen(false);
+    if (!localStorage.getItem("rc_user")) {
+      setNameDraft(genUsername());
+      setNameModalOpen(true);
+    }
+  }
+
+  function playMatchSound() {
+    try {
+      if (!audioCtxRef.current) {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;
+        audioCtxRef.current = new Ctx();
+      }
+      const ctx = audioCtxRef.current;
+      if (ctx.state === "suspended") ctx.resume().catch(() => {});
+      const t = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(660, t);
+      osc.frequency.exponentialRampToValueAtTime(990, t + 0.12);
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.25, t + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.4);
+    } catch {}
+  }
+
+  // Country-filter hint: if user has been searching with a specific country
+  // for > 20s with no match, suggest widening to "any".
+  useEffect(() => {
+    if (status !== "searching" || filter === "any") {
+      setSearchHint(false);
+      return;
+    }
+    const t = setTimeout(() => setSearchHint(true), 20_000);
+    return () => clearTimeout(t);
+  }, [status, filter]);
 
   function openNameModal() {
     setNameDraft(username || genUsername());
@@ -209,6 +260,11 @@ export default function Page() {
     setNeedsTapToPlay(false);
     setMessages([]);
     setChatInput("");
+    setRemoteTyping(false);
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
   }
 
   async function createPeer(peerId, initiator) {
@@ -245,6 +301,7 @@ export default function Page() {
         tryPlay();
       }
       setStatus("connected");
+      playMatchSound();
       startCameraWatchdog(remote, myRound);
     });
     p.on("data", (raw) => {
@@ -257,6 +314,15 @@ export default function Page() {
             ...m.slice(-49),
             { id: `${Date.now()}-${Math.random()}`, from: "them", text },
           ]);
+          setRemoteTyping(false);
+          if (typingTimeoutRef.current) {
+            clearTimeout(typingTimeoutRef.current);
+            typingTimeoutRef.current = null;
+          }
+        } else if (msg?.type === "typing") {
+          setRemoteTyping(true);
+          if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+          typingTimeoutRef.current = setTimeout(() => setRemoteTyping(false), 2500);
         }
       } catch {}
     });
@@ -310,6 +376,18 @@ export default function Page() {
       { id: `${Date.now()}-${Math.random()}`, from: "me", text },
     ]);
     setChatInput("");
+    lastTypingSentRef.current = 0;
+  }
+
+  function handleChatInput(e) {
+    const value = e.target.value;
+    setChatInput(value);
+    if (!value || status !== "connected" || !peerRef.current) return;
+    const now = Date.now();
+    if (now - lastTypingSentRef.current > 1500) {
+      try { peerRef.current.send(JSON.stringify({ type: "typing" })); } catch {}
+      lastTypingSentRef.current = now;
+    }
   }
 
   async function connectSocket() {
@@ -476,6 +554,20 @@ export default function Page() {
                     "press start to meet someone"
                   )}
                 </div>
+                {status === "searching" && searchHint && filter !== "any" && (
+                  <div className="mt-4 flex flex-col items-center gap-2">
+                    <span className="stamp" style={{ transform: "rotate(-1deg)", background: "var(--tomato)", color: "var(--paper)" }}>
+                      no {flag(filter)} {countryName(filter)} online right now
+                    </span>
+                    <button
+                      onClick={() => applyFilter("any")}
+                      className="btn btn-paper"
+                      style={{ padding: "0.5rem 1rem", fontSize: 12 }}
+                    >
+                      🌍 match with anyone
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -551,10 +643,24 @@ export default function Page() {
                   </div>
                 ))}
               </div>
+              {remoteTyping && (
+                <div className="pointer-events-auto self-start px-2 py-1 text-xs"
+                  style={{
+                    background: "rgba(15,13,12,0.6)",
+                    color: "var(--paper)",
+                    border: "2px solid var(--paper)",
+                    borderRadius: 4,
+                    fontStyle: "italic",
+                    backdropFilter: "blur(4px)",
+                  }}
+                >
+                  <span className="blip">stranger is typing…</span>
+                </div>
+              )}
               <form onSubmit={sendMessage} className="flex gap-2 pointer-events-auto pr-28 md:pr-0">
                 <input
                   value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
+                  onChange={handleChatInput}
                   placeholder="say something…"
                   maxLength={500}
                   className="flex-1 px-3 py-2 text-sm outline-none"
@@ -638,6 +744,27 @@ export default function Page() {
           )}
         </div>
       </footer>
+
+      {welcomeOpen && (
+        <div className="fixed inset-0 z-[55] flex items-center justify-center p-6" style={{ background: "rgba(15,13,12,0.92)" }}>
+          <div className="card w-full max-w-sm p-6" style={{ transform: "rotate(-0.6deg)" }}>
+            <div className="font-display text-4xl font-black italic leading-none mb-1">
+              welcome to <span style={{ color: "var(--tomato)" }}>RandoChat</span>
+            </div>
+            <div className="scribble text-sm mb-5">-1 on-1 video with strangers</div>
+            <ul className="text-sm space-y-2 mb-5" style={{ color: "#222" }}>
+              <li>📹 <strong>press start</strong> — we find you someone instantly.</li>
+              <li>⏭️ <strong>next</strong> skips, <strong>stop</strong> quits.</li>
+              <li>🌍 filter by <strong>country</strong> or meet anyone.</li>
+              <li>💬 chat by text while on video.</li>
+              <li>⛔ be kind. <strong>3 reports and you're banned</strong>.</li>
+            </ul>
+            <button onClick={dismissWelcome} className="btn btn-primary w-full" style={{ padding: "1rem", fontSize: 15 }}>
+              let&apos;s go →
+            </button>
+          </div>
+        </div>
+      )}
 
       {countryModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{ background: "rgba(15,13,12,0.88)" }}>
