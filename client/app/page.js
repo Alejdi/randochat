@@ -513,22 +513,22 @@ export default function Page() {
         </div>
       </header>
 
-      <div className="flex items-center justify-between px-4 pb-2 z-10 gap-2 flex-wrap">
-        <button onClick={openNameModal} className="stamp" title="change name">
-          @{username || "pick a name"}
+      <div className="flex items-center justify-between px-3 sm:px-4 pb-1.5 sm:pb-2 z-10 gap-1.5 sm:gap-2 flex-nowrap overflow-x-auto">
+        <button onClick={openNameModal} className="stamp shrink-0" title="change name">
+          @{username || "pick"}
         </button>
         <button
           onClick={() => setCountryModalOpen(true)}
-          className="stamp"
+          className="stamp shrink-0"
           style={{ transform: "rotate(-0.8deg)" }}
           title="match by country"
         >
-          {filter === "any" ? "🌍 any country" : `${flag(filter)} ${countryName(filter)}`}
+          {filter === "any" ? "🌍 any" : `${flag(filter)} ${filter}`}
         </button>
-        <span className="stamp" style={{ transform: "rotate(1.5deg)" }}>🪙 {coins} coins</span>
+        <span className="stamp shrink-0" style={{ transform: "rotate(1.5deg)" }}>🪙 {coins}</span>
       </div>
 
-      <section className="flex-1 min-h-0 mx-4 mb-3 grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+      <section className="flex-1 min-h-0 mx-2 sm:mx-4 mb-2 sm:mb-3 grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-3 md:gap-4">
         {/* Remote panel — full width on mobile, left half on desktop */}
         <div
           className="relative overflow-hidden border-2 border-black rounded-[6px] min-h-0"
@@ -578,7 +578,8 @@ export default function Page() {
             autoPlay
             playsInline
             muted
-            className="pip absolute bottom-3 right-3 w-24 h-36 sm:w-32 sm:h-48 object-cover md:hidden"
+            className="pip absolute bottom-2 right-2 w-[38vw] h-[28vh] max-w-[180px] max-h-[240px] object-cover md:hidden"
+            style={{ transform: "scaleX(-1)" }}
           />
 
           {giftFlash && (
@@ -608,11 +609,11 @@ export default function Page() {
           )}
 
           {status === "connected" && (
-            <div className="absolute top-3 right-3 flex gap-2">
-              <button onClick={report} className="btn btn-primary" style={{ padding: "6px 12px", fontSize: 12 }}>
+            <div className="absolute top-2 right-2 flex gap-1.5 sm:gap-2">
+              <button onClick={report} className="btn btn-primary" style={{ padding: "4px 10px", fontSize: 11 }}>
                 report
               </button>
-              <button onClick={block} className="btn btn-ghost" style={{ padding: "6px 12px", fontSize: 12 }}>
+              <button onClick={block} className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: 11 }}>
                 block
               </button>
             </div>
@@ -712,8 +713,8 @@ export default function Page() {
         </div>
       </section>
 
-      <footer className="px-4 pb-[max(1rem,env(safe-area-inset-bottom))] z-10">
-        <div className="flex items-center justify-center gap-3 mb-4">
+      <footer className="px-3 sm:px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1 z-10">
+        <div className="flex items-center justify-center gap-2 sm:gap-3 mb-2 sm:mb-4">
           {GIFTS.map((g) => (
             <button
               key={g.type}
@@ -727,17 +728,17 @@ export default function Page() {
           ))}
         </div>
 
-        <div className="flex items-center justify-center gap-3">
+        <div className="flex items-center justify-center gap-2 sm:gap-3">
           {status === "idle" ? (
-            <button onClick={start} className="btn btn-primary flex-1 max-w-sm" style={{ padding: "1.1rem", fontSize: "1.1rem" }}>
+            <button onClick={start} className="btn btn-primary btn-compact flex-1 max-w-sm">
               start →
             </button>
           ) : (
             <>
-              <button onClick={stop} className="btn btn-ghost" style={{ padding: "1.1rem 1.3rem" }}>
+              <button onClick={stop} className="btn btn-ghost btn-compact">
                 stop
               </button>
-              <button onClick={next} className="btn btn-mint flex-1 max-w-sm" style={{ padding: "1.1rem", fontSize: "1.1rem" }}>
+              <button onClick={next} className="btn btn-mint btn-compact flex-1 max-w-sm">
                 next →
               </button>
             </>
