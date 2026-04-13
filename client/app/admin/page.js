@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 const TABS = [
   { id: "overview", label: "overview" },
   { id: "live",     label: "live"     },
+  { id: "economy",  label: "economy"  },
   { id: "sessions", label: "sessions" },
   { id: "reports",  label: "reports"  },
   { id: "bans",     label: "bans"     },
@@ -48,6 +49,7 @@ export default function AdminDashboard() {
   const [bans, setBans] = useState([]);
   const [live, setLive] = useState(null);
   const [liveError, setLiveError] = useState("");
+  const [economy, setEconomy] = useState(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
@@ -55,12 +57,13 @@ export default function AdminDashboard() {
     setLoading(true);
     setErr("");
     try {
-      const [s, ss, r, b, l] = await Promise.all([
+      const [s, ss, r, b, l, ec] = await Promise.all([
         fetch("/api/admin/stats"),
         fetch("/api/admin/sessions"),
         fetch("/api/admin/reports"),
         fetch("/api/admin/bans"),
         fetch("/api/admin/live"),
+        fetch("/api/admin/economy"),
       ]);
       if (s.status === 401 || ss.status === 401) {
         router.push("/admin/login");
@@ -79,6 +82,7 @@ export default function AdminDashboard() {
         setLiveError(lj.error || `live fetch ${l.status}`);
         setLive(null);
       }
+      if (ec.ok) setEconomy(await ec.json());
     } catch (e) {
       setErr(String(e?.message || e));
     } finally {
@@ -257,6 +261,98 @@ export default function AdminDashboard() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {tab === "economy" && (
+        <div>
+          {!economy && <div className="opacity-60">loading…</div>}
+          {economy && (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                <Stat label="platform revenue · 30d" value={`🪙 ${economy.total_revenue_cents.toLocaleString()}`} sub="your 30% cut" />
+                <Stat label="gift volume · 30d"      value={`🪙 ${economy.total_volume_cents.toLocaleString()}`} sub="all coins gifted" />
+                <Stat label="gifts sent · 30d"       value={economy.total_gifts.toLocaleString()} />
+                <Stat label="coins in circulation"   value={`🪙 ${economy.coins_in_circulation.toLocaleString()}`} sub={`${economy.users_total || 0} users`} />
+              </div>
+
+              {economy.gifts_by_type && Object.keys(economy.gifts_by_type).length > 0 && (
+                <div className="card p-4 mb-4">
+                  <div className="text-xs uppercase tracking-wider opacity-60 mb-2" style={{ fontFamily: "Space Grotesk" }}>
+                    gifts by type · 30 days
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(economy.gifts_by_type).map(([type, count]) => (
+                      <span key={type} className="tag">{type} · {count}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div className="card p-4">
+                  <div className="text-xs uppercase tracking-wider opacity-60 mb-2" style={{ fontFamily: "Space Grotesk" }}>
+                    top gifters · 30d
+                  </div>
+                  {economy.top_senders.length === 0 && <div className="opacity-60 text-sm">no data yet</div>}
+                  {economy.top_senders.map((row, i) => (
+                    <div key={i} className="flex items-center justify-between text-sm py-1" style={{ borderTop: i ? "1px solid #ddd" : "none" }}>
+                      <span><strong>#{i + 1}</strong> {row.user?.username || `user ${row.user?.id}`}</span>
+                      <span>🪙 {row.total_cents.toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="card p-4">
+                  <div className="text-xs uppercase tracking-wider opacity-60 mb-2" style={{ fontFamily: "Space Grotesk" }}>
+                    top earners · 30d
+                  </div>
+                  {economy.top_receivers.length === 0 && <div className="opacity-60 text-sm">no data yet</div>}
+                  {economy.top_receivers.map((row, i) => (
+                    <div key={i} className="flex items-center justify-between text-sm py-1" style={{ borderTop: i ? "1px solid #ddd" : "none" }}>
+                      <span><strong>#{i + 1}</strong> {row.user?.username || `user ${row.user?.id}`}</span>
+                      <span>🪙 {row.total_cents.toLocaleString()} <span className="opacity-50">net</span></span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="card p-0 overflow-auto">
+                <div className="px-4 py-3 text-xs uppercase tracking-wider opacity-60" style={{ fontFamily: "Space Grotesk", background: "#fff", color: "var(--ink)" }}>
+                  recent gifts
+                </div>
+                <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ background: "#eee", color: "var(--ink)", textAlign: "left" }}>
+                      <th className="px-3 py-2">when</th>
+                      <th className="px-3 py-2">sender</th>
+                      <th className="px-3 py-2">receiver</th>
+                      <th className="px-3 py-2">type</th>
+                      <th className="px-3 py-2">amount</th>
+                      <th className="px-3 py-2">receiver got</th>
+                      <th className="px-3 py-2">platform</th>
+                    </tr>
+                  </thead>
+                  <tbody style={{ color: "var(--ink)" }}>
+                    {(economy.recent_gifts || []).map((g) => (
+                      <tr key={g.id} style={{ borderTop: "1px solid #ccc", background: "#fff" }}>
+                        <td className="px-3 py-2 whitespace-nowrap">{fmtTime(g.created_at)}</td>
+                        <td className="px-3 py-2">{g.sender?.username || `#${g.sender_id}`}</td>
+                        <td className="px-3 py-2">{g.receiver?.username || `#${g.receiver_id}`}</td>
+                        <td className="px-3 py-2">{g.gift_type}</td>
+                        <td className="px-3 py-2">🪙 {g.amount_cents}</td>
+                        <td className="px-3 py-2">🪙 {g.receiver_cut_cents}</td>
+                        <td className="px-3 py-2">🪙 {g.platform_cut_cents}</td>
+                      </tr>
+                    ))}
+                    {(economy.recent_gifts || []).length === 0 && (
+                      <tr><td colSpan={7} className="px-3 py-6 text-center" style={{ color: "#666" }}>no gifts yet</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </div>
       )}
 

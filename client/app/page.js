@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { genUsername } from "@/lib/username";
 import { COUNTRIES, flag, countryName } from "@/lib/countries";
+import { getDeviceId } from "@/lib/device-id";
 
 const SIGNAL_URL = process.env.NEXT_PUBLIC_SIGNAL_URL || "http://localhost:4000";
 
@@ -11,6 +12,14 @@ const GIFTS = [
   { type: "fire",  emoji: "🔥", cost: 10 },
   { type: "star",  emoji: "⭐", cost: 20 },
 ];
+
+const COIN_PACKAGES = [
+  { id: "small",  coins:   500, price: "$4.99",  highlight: false },
+  { id: "medium", coins:  2000, price: "$14.99", highlight: true  },
+  { id: "big",    coins: 10000, price: "$49.99", highlight: false },
+];
+
+const CASHOUT_MIN_COINS = 5000;
 
 const ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
@@ -35,6 +44,8 @@ export default function Page() {
   const [bannedNotice, setBannedNotice] = useState(null);
   const [installPrompt, setInstallPrompt] = useState(null);
   const [installDismissed, setInstallDismissed] = useState(false);
+  const [coinsModalOpen, setCoinsModalOpen] = useState(false);
+  const [coinsBusy, setCoinsBusy] = useState(false);
   const [nameModalOpen, setNameModalOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [nameError, setNameError] = useState("");
@@ -71,10 +82,10 @@ export default function Page() {
       setNameDraft(genUsername());
       setNameModalOpen(true);
     }
-    const c = Number(localStorage.getItem("rc_coins"));
-    if (!Number.isNaN(c) && c > 0) setCoins(c);
     const savedFilter = localStorage.getItem("rc_filter");
     if (savedFilter) setFilter(savedFilter);
+    // Pre-generate the device id so it's ready for the first `hello` event.
+    getDeviceId();
     // Open the signaling socket immediately so the presence counter is live
     // before the user presses Start.
     connectSocket();
@@ -144,9 +155,7 @@ export default function Page() {
     try { socketRef.current?.emit("hello", { username: clean }); } catch {}
   }
 
-  useEffect(() => {
-    if (username) localStorage.setItem("rc_coins", String(coins));
-  }, [coins, username]);
+  // NB: coin balance is server-authoritative now; no localStorage cache.
 
   // PWA install prompt (Chrome/Android). iOS Safari doesn't fire this event.
   useEffect(() => {
@@ -467,10 +476,13 @@ export default function Page() {
       setStatus("searching");
       s.emit("join-queue");
     });
-    s.on("gift", ({ type }) => {
+    s.on("gift", ({ type, credit }) => {
       const g = GIFTS.find((x) => x.type === type);
       setGiftFlash(g?.emoji || "🎁");
       setTimeout(() => setGiftFlash(null), 1400);
+      if (typeof credit === "number" && credit > 0) {
+        showToast(`+${credit} coins`);
+      }
     });
     s.on("disconnect", () => {
       teardownPeer();
@@ -487,7 +499,23 @@ export default function Page() {
     s.on("connect", () => {
       const u = localStorage.getItem("rc_user");
       const f = localStorage.getItem("rc_filter") || "any";
-      s.emit("hello", { username: u || undefined, filter: f });
+      s.emit("hello", { username: u || undefined, filter: f, deviceId: getDeviceId() });
+    });
+    s.on("balance", ({ balance }) => {
+      if (typeof balance === "number") setCoins(balance);
+    });
+    s.on("gift-result", ({ ok, error, balance }) => {
+      if (!ok) { showToast(error || "gift failed"); return; }
+      if (typeof balance === "number") setCoins(balance);
+    });
+    s.on("topup-result", ({ ok, error, added }) => {
+      setCoinsBusy(false);
+      if (!ok) { showToast(error || "top-up failed"); return; }
+      if (typeof added === "number") showToast(`+${added} coins`);
+      setCoinsModalOpen(false);
+    });
+    s.on("cashout-result", ({ ok, error }) => {
+      if (!ok) showToast(error || "cashout unavailable");
     });
     return s;
   }
@@ -536,11 +564,22 @@ export default function Page() {
 
   function sendGift(g) {
     if (status !== "connected") return;
-    if (coins < g.cost) { showToast("Out of coins"); return; }
-    setCoins((c) => c - g.cost);
+    if (coins < g.cost) { showToast("not enough coins — tap the stamp to top up"); setCoinsModalOpen(true); return; }
     socketRef.current?.emit("gift", { type: g.type });
     setGiftFlash(g.emoji);
     setTimeout(() => setGiftFlash(null), 1400);
+  }
+
+  function buyPackage(pkgId) {
+    if (coinsBusy) return;
+    setCoinsBusy(true);
+    socketRef.current?.emit("buy-coins", { packageId: pkgId });
+    // safety: if the server never responds, release the busy flag
+    setTimeout(() => setCoinsBusy(false), 8000);
+  }
+
+  function requestCashout() {
+    socketRef.current?.emit("cashout-request");
   }
 
   const tagClass =
@@ -587,7 +626,14 @@ export default function Page() {
             ? `🌍 any${online != null ? ` · ${online}` : ""}`
             : `${flag(filter)} ${filter} · ${countriesOnline[filter] || 0}`}
         </button>
-        <span className="stamp shrink-0" style={{ transform: "rotate(1.5deg)" }}>🪙 {coins}</span>
+        <button
+          onClick={() => setCoinsModalOpen(true)}
+          className="stamp shrink-0"
+          style={{ transform: "rotate(1.5deg)" }}
+          title="coins — buy or cash out"
+        >
+          🪙 {coins}
+        </button>
       </div>
 
       <section className="flex-1 min-h-0 mx-2 sm:mx-4 mb-2 sm:mb-3 grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-3 md:gap-4">
@@ -829,6 +875,84 @@ export default function Page() {
           )}
         </div>
       </footer>
+
+      {coinsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{ background: "rgba(15,13,12,0.88)" }}>
+          <div className="card w-full max-w-sm p-5 flex flex-col" style={{ transform: "rotate(-0.5deg)", maxHeight: "88vh", overflow: "auto" }}>
+            <div className="font-display text-2xl font-black italic">your coins</div>
+            <div className="scribble text-xs mb-3">
+              test mode — no real money yet
+            </div>
+
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <div className="text-xs uppercase tracking-wider opacity-60">balance</div>
+                <div className="font-display text-4xl font-black italic leading-none">🪙 {coins}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-xs uppercase tracking-wider opacity-60">fee per gift</div>
+                <div className="font-display text-2xl italic">30%</div>
+              </div>
+            </div>
+
+            <div className="text-xs uppercase tracking-wider opacity-60 mb-2">buy coins</div>
+            <div className="flex flex-col gap-2 mb-4">
+              {COIN_PACKAGES.map((pkg) => (
+                <button
+                  key={pkg.id}
+                  onClick={() => buyPackage(pkg.id)}
+                  disabled={coinsBusy}
+                  className="flex items-center justify-between px-3 py-2.5 text-left disabled:opacity-50"
+                  style={{
+                    background: pkg.highlight ? "var(--tomato)" : "#fff",
+                    color: pkg.highlight ? "var(--paper)" : "var(--ink)",
+                    border: "2px solid var(--line)",
+                    borderRadius: 4,
+                    boxShadow: pkg.highlight ? "3px 3px 0 0 var(--line)" : "none",
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">🪙</span>
+                    <span className="font-bold text-lg">{pkg.coins.toLocaleString()}</span>
+                    {pkg.highlight && <span className="text-xs opacity-80">best value</span>}
+                  </div>
+                  <div className="font-bold">{pkg.price}</div>
+                </button>
+              ))}
+            </div>
+
+            <div className="text-xs uppercase tracking-wider opacity-60 mb-2">cash out</div>
+            <div
+              className="px-3 py-3 mb-4 text-sm"
+              style={{
+                background: "#fff",
+                color: "var(--ink)",
+                border: "2px dashed #999",
+                borderRadius: 4,
+              }}
+            >
+              <div className="mb-1">
+                minimum <strong>{CASHOUT_MIN_COINS.toLocaleString()}</strong> coins to cash out.
+              </div>
+              <div className="opacity-70 text-xs leading-relaxed">
+                payouts not live yet. we&apos;re still figuring out the payment rails (KYC, tax forms, the usual). your balance is safe.
+              </div>
+              <button
+                onClick={requestCashout}
+                disabled={coins < CASHOUT_MIN_COINS}
+                className="btn btn-paper mt-3 w-full"
+                style={{ padding: "0.6rem", fontSize: 13 }}
+              >
+                {coins < CASHOUT_MIN_COINS ? `need ${CASHOUT_MIN_COINS - coins} more` : "request cashout"}
+              </button>
+            </div>
+
+            <button onClick={() => setCoinsModalOpen(false)} className="btn btn-paper w-full" style={{ padding: "0.7rem" }}>
+              close
+            </button>
+          </div>
+        </div>
+      )}
 
       {welcomeOpen && (
         <div className="fixed inset-0 z-[55] flex items-center justify-center p-6" style={{ background: "rgba(15,13,12,0.92)" }}>
