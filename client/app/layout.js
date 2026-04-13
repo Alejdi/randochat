@@ -1,6 +1,6 @@
 import "./globals.css";
 
-const SITE_URL = "https://randochat-jet.vercel.app";
+const SITE_URL = "https://randochat.live";
 const SITE_TITLE = "RandoChat — random video chat";
 const SITE_DESC  = "1-on-1 random video chat with strangers. pick a country or go global.";
 

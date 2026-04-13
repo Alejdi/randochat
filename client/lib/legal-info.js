@@ -9,5 +9,5 @@ export const LEGAL = {
   governingLaw: "the laws of the Republic of Albania",
   ageMinimum: 18,
   effectiveDate: "April 13, 2026",
-  homeUrl: "https://randochat-jet.vercel.app",
+  homeUrl: "https://randochat.live",
 };
