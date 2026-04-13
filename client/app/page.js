@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { genUsername } from "@/lib/username";
 import { COUNTRIES, flag, countryName } from "@/lib/countries";
 import { getDeviceId } from "@/lib/device-id";
+import { PAYMENT, COINS_PER_USD } from "@/lib/payment-info";
 
 const SIGNAL_URL = process.env.NEXT_PUBLIC_SIGNAL_URL || "http://localhost:4000";
 
@@ -13,13 +14,13 @@ const GIFTS = [
   { type: "star",  emoji: "⭐", cost: 20 },
 ];
 
-const COIN_PACKAGES = [
-  { id: "small",  coins:   500, price: "$4.99",  highlight: false },
-  { id: "medium", coins:  2000, price: "$14.99", highlight: true  },
-  { id: "big",    coins: 10000, price: "$49.99", highlight: false },
-];
-
 const CASHOUT_MIN_COINS = 5000;
+const CASHOUT_METHODS = [
+  { id: "paypal", label: "PayPal email",    hint: "e.g. you@example.com" },
+  { id: "crypto", label: "USDC on Base",    hint: "your 0x… wallet address" },
+  { id: "bank",   label: "Bank transfer",   hint: "IBAN or account info"   },
+  { id: "other",  label: "Other",           hint: "describe how to pay you" },
+];
 
 const ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
@@ -45,7 +46,12 @@ export default function Page() {
   const [installPrompt, setInstallPrompt] = useState(null);
   const [installDismissed, setInstallDismissed] = useState(false);
   const [coinsModalOpen, setCoinsModalOpen] = useState(false);
-  const [coinsBusy, setCoinsBusy] = useState(false);
+  const [coinsTab, setCoinsTab] = useState("buy"); // buy | cashout | history
+  const [cashoutAmount, setCashoutAmount] = useState("");
+  const [cashoutMethod, setCashoutMethod] = useState("paypal");
+  const [cashoutDestination, setCashoutDestination] = useState("");
+  const [cashoutBusy, setCashoutBusy] = useState(false);
+  const [cashoutHistory, setCashoutHistory] = useState([]);
   const [nameModalOpen, setNameModalOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [nameError, setNameError] = useState("");
@@ -508,14 +514,17 @@ export default function Page() {
       if (!ok) { showToast(error || "gift failed"); return; }
       if (typeof balance === "number") setCoins(balance);
     });
-    s.on("topup-result", ({ ok, error, added }) => {
-      setCoinsBusy(false);
-      if (!ok) { showToast(error || "top-up failed"); return; }
-      if (typeof added === "number") showToast(`+${added} coins`);
-      setCoinsModalOpen(false);
+    s.on("cashout-result", ({ ok, error, requestId }) => {
+      setCashoutBusy(false);
+      if (!ok) { showToast(error || "cashout failed"); return; }
+      showToast(`cashout request #${requestId} submitted`);
+      setCashoutAmount("");
+      setCashoutDestination("");
+      setCoinsTab("history");
+      s.emit("my-cashouts");
     });
-    s.on("cashout-result", ({ ok, error }) => {
-      if (!ok) showToast(error || "cashout unavailable");
+    s.on("my-cashouts", ({ rows } = {}) => {
+      setCashoutHistory(rows || []);
     });
     return s;
   }
@@ -564,22 +573,42 @@ export default function Page() {
 
   function sendGift(g) {
     if (status !== "connected") return;
-    if (coins < g.cost) { showToast("not enough coins — tap the stamp to top up"); setCoinsModalOpen(true); return; }
+    if (coins < g.cost) { showToast("not enough coins — tap the stamp to top up"); openCoinsModal("buy"); return; }
     socketRef.current?.emit("gift", { type: g.type });
     setGiftFlash(g.emoji);
     setTimeout(() => setGiftFlash(null), 1400);
   }
 
-  function buyPackage(pkgId) {
-    if (coinsBusy) return;
-    setCoinsBusy(true);
-    socketRef.current?.emit("buy-coins", { packageId: pkgId });
-    // safety: if the server never responds, release the busy flag
-    setTimeout(() => setCoinsBusy(false), 8000);
+  function openCoinsModal(tab = "buy") {
+    setCoinsTab(tab);
+    setCoinsModalOpen(true);
+    if (tab === "history" || tab === "cashout") {
+      socketRef.current?.emit("my-cashouts");
+    }
   }
 
-  function requestCashout() {
-    socketRef.current?.emit("cashout-request");
+  function submitCashout(e) {
+    e?.preventDefault?.();
+    const amount = parseInt(cashoutAmount, 10);
+    if (!Number.isFinite(amount) || amount < CASHOUT_MIN_COINS) {
+      showToast(`minimum ${CASHOUT_MIN_COINS} coins`);
+      return;
+    }
+    if (amount > coins) {
+      showToast("more than your balance");
+      return;
+    }
+    if (cashoutDestination.trim().length < 3) {
+      showToast("enter a destination");
+      return;
+    }
+    setCashoutBusy(true);
+    socketRef.current?.emit("cashout-request", {
+      amount,
+      method: cashoutMethod,
+      destination: cashoutDestination.trim(),
+    });
+    setTimeout(() => setCashoutBusy(false), 8000);
   }
 
   const tagClass =
@@ -627,7 +656,7 @@ export default function Page() {
             : `${flag(filter)} ${filter} · ${countriesOnline[filter] || 0}`}
         </button>
         <button
-          onClick={() => setCoinsModalOpen(true)}
+          onClick={() => openCoinsModal("buy")}
           className="stamp shrink-0"
           style={{ transform: "rotate(1.5deg)" }}
           title="coins — buy or cash out"
@@ -883,79 +912,219 @@ export default function Page() {
       </footer>
 
       {coinsModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{ background: "rgba(15,13,12,0.88)" }}>
-          <div className="card w-full max-w-sm p-5 flex flex-col" style={{ transform: "rotate(-0.5deg)", maxHeight: "88vh", overflow: "auto" }}>
-            <div className="font-display text-2xl font-black italic">your coins</div>
-            <div className="scribble text-xs mb-3">
-              test mode — no real money yet
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6" style={{ background: "rgba(15,13,12,0.88)" }}>
+          <div className="card w-full max-w-md flex flex-col" style={{ transform: "rotate(-0.5deg)", maxHeight: "92vh" }}>
+            <div className="p-5 pb-3">
+              <div className="flex items-center justify-between">
+                <div className="font-display text-2xl font-black italic">your coins</div>
+                <div className="text-right">
+                  <div className="text-[10px] uppercase tracking-wider opacity-60">balance</div>
+                  <div className="font-display text-2xl font-black italic leading-none">🪙 {coins}</div>
+                </div>
+              </div>
+              <div className="flex gap-1.5 mt-3">
+                {[
+                  { id: "buy",     label: "buy"     },
+                  { id: "cashout", label: "cash out" },
+                  { id: "history", label: "history" },
+                ].map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => { setCoinsTab(t.id); if (t.id !== "buy") socketRef.current?.emit("my-cashouts"); }}
+                    className="text-xs px-2.5 py-1"
+                    style={{
+                      background: coinsTab === t.id ? "var(--tomato)" : "#f3e9d7",
+                      color: coinsTab === t.id ? "var(--paper)" : "var(--ink)",
+                      border: "2px solid var(--line)",
+                      borderRadius: 4,
+                      fontFamily: "Space Grotesk",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <div className="text-xs uppercase tracking-wider opacity-60">balance</div>
-                <div className="font-display text-4xl font-black italic leading-none">🪙 {coins}</div>
-              </div>
-              <div className="text-right">
-                <div className="text-xs uppercase tracking-wider opacity-60">fee per gift</div>
-                <div className="font-display text-2xl italic">30%</div>
-              </div>
-            </div>
+            <div className="px-5 pb-5 overflow-y-auto" style={{ color: "var(--ink)" }}>
+              {coinsTab === "buy" && (
+                <>
+                  <div className="text-xs uppercase tracking-wider opacity-60 mb-2">how to buy coins</div>
+                  <p className="text-sm leading-relaxed mb-3">
+                    send your payment to one of the addresses below. include your username
+                    <span className="font-bold"> @{username || "yourname"}</span> as the memo/reference.
+                    we&apos;ll credit your balance manually — <em>{PAYMENT.creditEtaText}</em>.
+                  </p>
+                  <p className="text-xs mb-4" style={{ color: "#666" }}>
+                    current rate: <strong>{COINS_PER_USD} coins per $1</strong>. minimum ${PAYMENT.minimumPurchaseUsd}.
+                  </p>
 
-            <div className="text-xs uppercase tracking-wider opacity-60 mb-2">buy coins</div>
-            <div className="flex flex-col gap-2 mb-4">
-              {COIN_PACKAGES.map((pkg) => (
-                <button
-                  key={pkg.id}
-                  onClick={() => buyPackage(pkg.id)}
-                  disabled={coinsBusy}
-                  className="flex items-center justify-between px-3 py-2.5 text-left disabled:opacity-50"
-                  style={{
-                    background: pkg.highlight ? "var(--tomato)" : "#fff",
-                    color: pkg.highlight ? "var(--paper)" : "var(--ink)",
-                    border: "2px solid var(--line)",
-                    borderRadius: 4,
-                    boxShadow: pkg.highlight ? "3px 3px 0 0 var(--line)" : "none",
-                  }}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl">🪙</span>
-                    <span className="font-bold text-lg">{pkg.coins.toLocaleString()}</span>
-                    {pkg.highlight && <span className="text-xs opacity-80">best value</span>}
+                  {PAYMENT.paypalEmail && (
+                    <div
+                      className="p-3 mb-2 flex items-start justify-between gap-2"
+                      style={{ background: "#fff", border: "2px solid var(--line)", borderRadius: 4 }}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[10px] uppercase tracking-wider opacity-60 mb-0.5">paypal</div>
+                        <div className="text-sm font-mono break-all">{PAYMENT.paypalEmail}</div>
+                        {PAYMENT.paypalMeLink && (
+                          <a href={PAYMENT.paypalMeLink} target="_blank" rel="noreferrer" className="text-xs underline" style={{ color: "#cc3409" }}>
+                            open paypal.me →
+                          </a>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => { navigator.clipboard?.writeText(PAYMENT.paypalEmail); showToast("email copied"); }}
+                        className="text-xs px-2 py-1"
+                        style={{ background: "#f3e9d7", border: "2px solid var(--line)", borderRadius: 4, fontWeight: 700 }}
+                      >
+                        copy
+                      </button>
+                    </div>
+                  )}
+
+                  {PAYMENT.usdcBaseAddress && !/^0x0+$/i.test(PAYMENT.usdcBaseAddress) && (
+                    <div
+                      className="p-3 mb-2 flex items-start justify-between gap-2"
+                      style={{ background: "#fff", border: "2px solid var(--line)", borderRadius: 4 }}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[10px] uppercase tracking-wider opacity-60 mb-0.5">USDC · Base network</div>
+                        <div className="text-xs font-mono break-all">{PAYMENT.usdcBaseAddress}</div>
+                      </div>
+                      <button
+                        onClick={() => { navigator.clipboard?.writeText(PAYMENT.usdcBaseAddress); showToast("address copied"); }}
+                        className="text-xs px-2 py-1"
+                        style={{ background: "#f3e9d7", border: "2px solid var(--line)", borderRadius: 4, fontWeight: 700 }}
+                      >
+                        copy
+                      </button>
+                    </div>
+                  )}
+
+                  <div
+                    className="p-3 mt-3 text-xs"
+                    style={{ background: "#fff7e6", border: "2px dashed #d89b2a", borderRadius: 4, color: "#6b4a00" }}
+                  >
+                    <strong>important:</strong> include your username{" "}
+                    <span className="font-mono">@{username || "yourname"}</span> in the payment
+                    memo or we can&apos;t match it to your account. questions?{" "}
+                    <a href={`mailto:${PAYMENT.contactEmail}`} className="underline">{PAYMENT.contactEmail}</a>
                   </div>
-                  <div className="font-bold">{pkg.price}</div>
-                </button>
-              ))}
+                </>
+              )}
+
+              {coinsTab === "cashout" && (
+                <form onSubmit={submitCashout}>
+                  <div className="text-xs uppercase tracking-wider opacity-60 mb-2">request cash out</div>
+                  <p className="text-sm mb-3">
+                    minimum <strong>{CASHOUT_MIN_COINS.toLocaleString()}</strong> coins. we process by hand,
+                    usually within a few days. you can&apos;t spend the coins once the request is submitted
+                    (we&apos;ll refund if we reject).
+                  </p>
+
+                  <div className="text-[10px] uppercase tracking-wider opacity-60 mb-1">amount</div>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={CASHOUT_MIN_COINS}
+                    max={coins}
+                    value={cashoutAmount}
+                    onChange={(e) => setCashoutAmount(e.target.value)}
+                    placeholder={`${CASHOUT_MIN_COINS} or more`}
+                    className="w-full px-3 py-2 text-sm outline-none mb-3"
+                    style={{ background: "#fff", color: "var(--ink)", border: "2px solid var(--line)", borderRadius: 4, fontFamily: "Space Grotesk", fontWeight: 700 }}
+                  />
+
+                  <div className="text-[10px] uppercase tracking-wider opacity-60 mb-1">payout method</div>
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    {CASHOUT_METHODS.map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setCashoutMethod(m.id)}
+                        className="text-xs px-2.5 py-1.5"
+                        style={{
+                          background: cashoutMethod === m.id ? "var(--tomato)" : "#fff",
+                          color: cashoutMethod === m.id ? "var(--paper)" : "var(--ink)",
+                          border: "2px solid var(--line)",
+                          borderRadius: 4,
+                          fontFamily: "Space Grotesk",
+                          fontWeight: 700,
+                        }}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="text-[10px] uppercase tracking-wider opacity-60 mb-1">destination</div>
+                  <input
+                    type="text"
+                    value={cashoutDestination}
+                    onChange={(e) => setCashoutDestination(e.target.value)}
+                    placeholder={CASHOUT_METHODS.find((m) => m.id === cashoutMethod)?.hint || ""}
+                    className="w-full px-3 py-2 text-sm outline-none mb-3"
+                    style={{ background: "#fff", color: "var(--ink)", border: "2px solid var(--line)", borderRadius: 4, fontFamily: "Space Grotesk" }}
+                  />
+
+                  <button
+                    type="submit"
+                    disabled={cashoutBusy || coins < CASHOUT_MIN_COINS}
+                    className="btn btn-primary w-full"
+                    style={{ padding: "0.8rem", fontSize: 14 }}
+                  >
+                    {cashoutBusy ? "…" : coins < CASHOUT_MIN_COINS ? `need ${CASHOUT_MIN_COINS - coins} more` : "submit request"}
+                  </button>
+
+                  <div className="text-[11px] mt-3" style={{ color: "#666" }}>
+                    by submitting you confirm you are at least 18 years old and the destination belongs to you.
+                  </div>
+                </form>
+              )}
+
+              {coinsTab === "history" && (
+                <>
+                  <div className="text-xs uppercase tracking-wider opacity-60 mb-2">your cashout requests</div>
+                  {cashoutHistory.length === 0 && (
+                    <div className="text-sm opacity-60 py-4 text-center">no requests yet</div>
+                  )}
+                  {cashoutHistory.map((r) => (
+                    <div key={r.id} className="p-3 mb-2" style={{ background: "#fff", border: "2px solid var(--line)", borderRadius: 4 }}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm"><strong>🪙 {r.amount_cents}</strong> · {r.method}</div>
+                          <div className="text-xs font-mono break-all" style={{ color: "#666" }}>{r.destination}</div>
+                        </div>
+                        <span
+                          className="text-[10px] uppercase tracking-wider px-1.5 py-0.5"
+                          style={{
+                            background: r.status === "paid" ? "var(--mint)" : r.status === "rejected" ? "#ffcccc" : "#f3e9d7",
+                            border: "2px solid var(--line)",
+                            borderRadius: 3,
+                            fontFamily: "Space Grotesk",
+                            fontWeight: 700,
+                          }}
+                        >
+                          {r.status}
+                        </span>
+                      </div>
+                      <div className="text-[10px] mt-1" style={{ color: "#666" }}>
+                        {new Date(r.created_at).toLocaleString()}
+                        {r.admin_note && <> · <em>{r.admin_note}</em></>}
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
 
-            <div className="text-xs uppercase tracking-wider opacity-60 mb-2">cash out</div>
-            <div
-              className="px-3 py-3 mb-4 text-sm"
-              style={{
-                background: "#fff",
-                color: "var(--ink)",
-                border: "2px dashed #999",
-                borderRadius: 4,
-              }}
-            >
-              <div className="mb-1">
-                minimum <strong>{CASHOUT_MIN_COINS.toLocaleString()}</strong> coins to cash out.
-              </div>
-              <div className="opacity-70 text-xs leading-relaxed">
-                payouts not live yet. we&apos;re still figuring out the payment rails (KYC, tax forms, the usual). your balance is safe.
-              </div>
-              <button
-                onClick={requestCashout}
-                disabled={coins < CASHOUT_MIN_COINS}
-                className="btn btn-paper mt-3 w-full"
-                style={{ padding: "0.6rem", fontSize: 13 }}
-              >
-                {coins < CASHOUT_MIN_COINS ? `need ${CASHOUT_MIN_COINS - coins} more` : "request cashout"}
+            <div className="p-5 pt-0">
+              <button onClick={() => setCoinsModalOpen(false)} className="btn btn-paper w-full" style={{ padding: "0.7rem" }}>
+                close
               </button>
             </div>
-
-            <button onClick={() => setCoinsModalOpen(false)} className="btn btn-paper w-full" style={{ padding: "0.7rem" }}>
-              close
-            </button>
           </div>
         </div>
       )}

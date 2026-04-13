@@ -7,6 +7,7 @@ const TABS = [
   { id: "overview", label: "overview" },
   { id: "live",     label: "live"     },
   { id: "economy",  label: "economy"  },
+  { id: "cashouts", label: "cashouts" },
   { id: "sessions", label: "sessions" },
   { id: "reports",  label: "reports"  },
   { id: "bans",     label: "bans"     },
@@ -50,6 +51,14 @@ export default function AdminDashboard() {
   const [live, setLive] = useState(null);
   const [liveError, setLiveError] = useState("");
   const [economy, setEconomy] = useState(null);
+  const [cashouts, setCashouts] = useState([]);
+  const [creditQuery, setCreditQuery] = useState("");
+  const [creditResults, setCreditResults] = useState([]);
+  const [creditTarget, setCreditTarget] = useState(null);
+  const [creditAmount, setCreditAmount] = useState("");
+  const [creditRef, setCreditRef] = useState("");
+  const [creditNote, setCreditNote] = useState("");
+  const [creditBusy, setCreditBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
@@ -83,6 +92,11 @@ export default function AdminDashboard() {
         setLive(null);
       }
       if (ec.ok) setEconomy(await ec.json());
+      const ch = await fetch("/api/admin/cashouts");
+      if (ch.ok) {
+        const chj = await ch.json();
+        setCashouts(chj.requests || []);
+      }
     } catch (e) {
       setErr(String(e?.message || e));
     } finally {
@@ -113,6 +127,62 @@ export default function AdminDashboard() {
     if (!confirm("Unban?")) return;
     const r = await fetch(`/api/admin/bans?id=${id}`, { method: "DELETE" });
     if (!r.ok) { alert("unban failed"); return; }
+    load();
+  }
+
+  async function searchUsers() {
+    if (!creditQuery.trim()) { setCreditResults([]); return; }
+    const r = await fetch(`/api/admin/credit?q=${encodeURIComponent(creditQuery.trim())}`);
+    if (!r.ok) { alert("search failed"); return; }
+    const j = await r.json();
+    setCreditResults(j.users || []);
+  }
+
+  async function submitCredit(e) {
+    e?.preventDefault?.();
+    if (!creditTarget) { alert("pick a user first"); return; }
+    const amount = parseInt(creditAmount, 10);
+    if (!Number.isFinite(amount) || amount === 0) { alert("amount required"); return; }
+    if (!confirm(`${amount > 0 ? "credit" : "debit"} ${Math.abs(amount)} coins to ${creditTarget.username || creditTarget.device_id}?`)) return;
+    setCreditBusy(true);
+    const r = await fetch("/api/admin/credit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: creditTarget.id,
+        amount,
+        ref:  creditRef  || null,
+        note: creditNote || null,
+      }),
+    });
+    setCreditBusy(false);
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      alert(j.error || "credit failed");
+      return;
+    }
+    const j = await r.json();
+    alert(`done. new balance: ${j.balance_cents}`);
+    setCreditAmount("");
+    setCreditRef("");
+    setCreditNote("");
+    searchUsers();
+    load();
+  }
+
+  async function processCashout(id, action) {
+    const adminNote = prompt(action === "paid" ? "payment reference / note (optional)" : "rejection reason (optional)");
+    if (adminNote === null) return;
+    const r = await fetch("/api/admin/cashouts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, action, admin_note: adminNote }),
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      alert(j.error || "process failed");
+      return;
+    }
     load();
   }
 
@@ -317,6 +387,81 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
+              <div className="card p-4 mb-4">
+                <div className="text-xs uppercase tracking-wider opacity-60 mb-3" style={{ fontFamily: "Space Grotesk" }}>
+                  manual credit / debit
+                </div>
+                <div className="flex gap-2 mb-3">
+                  <input
+                    value={creditQuery}
+                    onChange={(e) => setCreditQuery(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") searchUsers(); }}
+                    placeholder="search username or device id…"
+                    className="flex-1 px-3 py-2 text-sm outline-none"
+                    style={{ background: "#fff", color: "var(--ink)", border: "2px solid var(--line)", borderRadius: 4 }}
+                  />
+                  <button onClick={searchUsers} className="btn btn-paper" style={{ padding: "0.4rem 0.9rem", fontSize: 12 }}>
+                    search
+                  </button>
+                </div>
+                {creditResults.length > 0 && (
+                  <div className="mb-3 flex flex-col gap-1">
+                    {creditResults.map((u) => (
+                      <button
+                        key={u.id}
+                        onClick={() => setCreditTarget(u)}
+                        className="text-left text-sm px-3 py-2 flex items-center justify-between"
+                        style={{
+                          background: creditTarget?.id === u.id ? "var(--tomato)" : "#fff",
+                          color: creditTarget?.id === u.id ? "var(--paper)" : "var(--ink)",
+                          border: "2px solid var(--line)",
+                          borderRadius: 4,
+                        }}
+                      >
+                        <span>{u.username || "—"} · <span className="opacity-60 font-mono text-xs">{u.device_id?.slice(0, 14)}…</span></span>
+                        <span>🪙 {u.balance_cents}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {creditTarget && (
+                  <form onSubmit={submitCredit} className="flex flex-col gap-2">
+                    <div className="text-xs" style={{ color: "var(--ink)" }}>
+                      target: <strong>{creditTarget.username || creditTarget.device_id}</strong> · current 🪙 {creditTarget.balance_cents}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        value={creditAmount}
+                        onChange={(e) => setCreditAmount(e.target.value)}
+                        placeholder="amount (+ credit / − debit)"
+                        className="flex-1 px-3 py-2 text-sm outline-none"
+                        style={{ background: "#fff", color: "var(--ink)", border: "2px solid var(--line)", borderRadius: 4 }}
+                      />
+                      <input
+                        type="text"
+                        value={creditRef}
+                        onChange={(e) => setCreditRef(e.target.value)}
+                        placeholder="ref (paypal tx id, chain hash…)"
+                        className="flex-1 px-3 py-2 text-sm outline-none"
+                        style={{ background: "#fff", color: "var(--ink)", border: "2px solid var(--line)", borderRadius: 4 }}
+                      />
+                    </div>
+                    <input
+                      type="text"
+                      value={creditNote}
+                      onChange={(e) => setCreditNote(e.target.value)}
+                      placeholder="note (optional)"
+                      className="px-3 py-2 text-sm outline-none"
+                      style={{ background: "#fff", color: "var(--ink)", border: "2px solid var(--line)", borderRadius: 4 }}
+                    />
+                    <button type="submit" disabled={creditBusy} className="btn btn-primary" style={{ padding: "0.6rem", fontSize: 13 }}>
+                      {creditBusy ? "…" : "apply"}
+                    </button>
+                  </form>
+                )}
+              </div>
+
               <div className="card p-0 overflow-auto">
                 <div className="px-4 py-3 text-xs uppercase tracking-wider opacity-60" style={{ fontFamily: "Space Grotesk", background: "#fff", color: "var(--ink)" }}>
                   recent gifts
@@ -353,6 +498,82 @@ export default function AdminDashboard() {
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {tab === "cashouts" && (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-xs uppercase tracking-wider opacity-60" style={{ fontFamily: "Space Grotesk" }}>
+              cashout requests
+            </div>
+            <div className="flex gap-2 text-xs">
+              <span className="tag tag-warm">pending {cashouts.filter((c) => c.status === "pending").length}</span>
+              <span className="tag tag-live">paid {cashouts.filter((c) => c.status === "paid").length}</span>
+              <span className="tag">rejected {cashouts.filter((c) => c.status === "rejected").length}</span>
+            </div>
+          </div>
+          <div className="card p-0 overflow-auto">
+            <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: "#eee", color: "var(--ink)", textAlign: "left" }}>
+                  <th className="px-3 py-2">when</th>
+                  <th className="px-3 py-2">user</th>
+                  <th className="px-3 py-2">amount</th>
+                  <th className="px-3 py-2">method</th>
+                  <th className="px-3 py-2">destination</th>
+                  <th className="px-3 py-2">status</th>
+                  <th className="px-3 py-2">admin note</th>
+                  <th className="px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody style={{ color: "var(--ink)" }}>
+                {cashouts.map((c) => (
+                  <tr key={c.id} style={{ borderTop: "1px solid #ccc", background: "#fff" }}>
+                    <td className="px-3 py-2 whitespace-nowrap">{fmtTime(c.created_at)}</td>
+                    <td className="px-3 py-2">
+                      {c.user?.username || `#${c.user_id}`}
+                      {c.user && <span className="opacity-50 text-xs"> · 🪙 {c.user.balance_cents}</span>}
+                    </td>
+                    <td className="px-3 py-2 font-bold">🪙 {c.amount_cents}</td>
+                    <td className="px-3 py-2">{c.method}</td>
+                    <td className="px-3 py-2 font-mono text-xs break-all max-w-[260px]">{c.destination}</td>
+                    <td className="px-3 py-2">
+                      <span className={
+                        c.status === "paid" ? "tag tag-live" :
+                        c.status === "rejected" ? "tag" :
+                        "tag tag-warm"
+                      }>{c.status}</span>
+                    </td>
+                    <td className="px-3 py-2 text-xs opacity-70">{c.admin_note || "—"}</td>
+                    <td className="px-3 py-2">
+                      {c.status === "pending" && (
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => processCashout(c.id, "paid")}
+                            className="btn btn-mint"
+                            style={{ padding: "4px 10px", fontSize: 11, color: "var(--ink)", borderColor: "var(--ink)", boxShadow: "3px 3px 0 0 var(--ink)" }}
+                          >
+                            mark paid
+                          </button>
+                          <button
+                            onClick={() => processCashout(c.id, "rejected")}
+                            className="btn btn-primary"
+                            style={{ padding: "4px 10px", fontSize: 11 }}
+                          >
+                            reject
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {cashouts.length === 0 && (
+                  <tr><td colSpan={8} className="px-3 py-6 text-center" style={{ color: "#666" }}>no cashout requests</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
