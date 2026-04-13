@@ -31,7 +31,10 @@ export default function Page() {
   const [permPrompt, setPermPrompt] = useState(null); // null | denied | error | insecure
   const [needsTapToPlay, setNeedsTapToPlay] = useState(false);
   const [online, setOnline] = useState(null);
+  const [countriesOnline, setCountriesOnline] = useState({});
   const [bannedNotice, setBannedNotice] = useState(null);
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [installDismissed, setInstallDismissed] = useState(false);
   const [nameModalOpen, setNameModalOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [nameError, setNameError] = useState("");
@@ -144,6 +147,46 @@ export default function Page() {
   useEffect(() => {
     if (username) localStorage.setItem("rc_coins", String(coins));
   }, [coins, username]);
+
+  // PWA install prompt (Chrome/Android). iOS Safari doesn't fire this event.
+  useEffect(() => {
+    if (localStorage.getItem("rc_install_dismissed") === "1") {
+      setInstallDismissed(true);
+      return;
+    }
+    const onBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+    const onInstalled = () => {
+      setInstallPrompt(null);
+      setInstallDismissed(true);
+    };
+    window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
+  }, []);
+
+  async function doInstall() {
+    if (!installPrompt) return;
+    try {
+      installPrompt.prompt();
+      const { outcome } = await installPrompt.userChoice;
+      if (outcome === "accepted") {
+        setInstallDismissed(true);
+      }
+    } catch {}
+    setInstallPrompt(null);
+  }
+
+  function dismissInstall() {
+    localStorage.setItem("rc_install_dismissed", "1");
+    setInstallDismissed(true);
+    setInstallPrompt(null);
+  }
 
   useEffect(() => {
     const el = chatListRef.current;
@@ -434,7 +477,10 @@ export default function Page() {
       setStatus("idle");
       setOnline(null);
     });
-    s.on("presence", ({ online }) => setOnline(online));
+    s.on("presence", ({ online, countries }) => {
+      setOnline(online);
+      if (countries) setCountriesOnline(countries);
+    });
     s.on("banned", ({ reason }) => {
       setBannedNotice(reason || "Your access has been restricted.");
     });
@@ -537,7 +583,9 @@ export default function Page() {
           style={{ transform: "rotate(-0.8deg)" }}
           title="match by country"
         >
-          {filter === "any" ? "🌍 any" : `${flag(filter)} ${filter}`}
+          {filter === "any"
+            ? `🌍 any${online != null ? ` · ${online}` : ""}`
+            : `${flag(filter)} ${filter} · ${countriesOnline[filter] || 0}`}
         </button>
         <span className="stamp shrink-0" style={{ transform: "rotate(1.5deg)" }}>🪙 {coins}</span>
       </div>
@@ -728,6 +776,28 @@ export default function Page() {
       </section>
 
       <footer className="px-3 sm:px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1 z-10">
+        {installPrompt && !installDismissed && status === "idle" && (
+          <div className="flex items-center justify-center gap-2 mb-2">
+            <span className="stamp" style={{ transform: "rotate(-0.6deg)" }}>
+              📱 install RandoChat
+            </span>
+            <button
+              onClick={doInstall}
+              className="btn btn-mint"
+              style={{ padding: "4px 12px", fontSize: 11 }}
+            >
+              install
+            </button>
+            <button
+              onClick={dismissInstall}
+              aria-label="dismiss install prompt"
+              className="btn btn-ghost"
+              style={{ padding: "4px 10px", fontSize: 11 }}
+            >
+              ×
+            </button>
+          </div>
+        )}
         <div className="flex items-center justify-center gap-2 sm:gap-3 mb-2 sm:mb-4">
           {GIFTS.map((g) => (
             <button
@@ -812,24 +882,34 @@ export default function Page() {
                 }}
               >
                 <span>🌍</span> <span>any country</span>
+                <span className="ml-auto text-xs opacity-60">
+                  {online != null ? `${online} online` : "—"}
+                </span>
               </button>
-              {filteredCountries.map((c) => (
-                <button
-                  key={c.code}
-                  onClick={() => applyFilter(c.code)}
-                  className={`w-full text-left px-3 py-2 mb-1 text-sm flex items-center gap-2 ${filter === c.code ? "font-bold" : ""}`}
-                  style={{
-                    background: filter === c.code ? "var(--tomato)" : "transparent",
-                    color: filter === c.code ? "var(--paper)" : "var(--ink)",
-                    border: "2px solid var(--line)",
-                    borderRadius: 4,
-                  }}
-                >
-                  <span>{flag(c.code)}</span>
-                  <span>{c.name}</span>
-                  <span className="ml-auto text-xs opacity-50">{c.code}</span>
-                </button>
-              ))}
+              {filteredCountries.map((c) => {
+                const count = countriesOnline[c.code] || 0;
+                const dead = count === 0;
+                return (
+                  <button
+                    key={c.code}
+                    onClick={() => applyFilter(c.code)}
+                    className={`w-full text-left px-3 py-2 mb-1 text-sm flex items-center gap-2 ${filter === c.code ? "font-bold" : ""}`}
+                    style={{
+                      background: filter === c.code ? "var(--tomato)" : "transparent",
+                      color: filter === c.code ? "var(--paper)" : "var(--ink)",
+                      border: "2px solid var(--line)",
+                      borderRadius: 4,
+                      opacity: dead && filter !== c.code ? 0.55 : 1,
+                    }}
+                  >
+                    <span>{flag(c.code)}</span>
+                    <span>{c.name}</span>
+                    <span className="ml-auto text-xs" style={{ color: filter === c.code ? "var(--paper)" : (dead ? "#999" : "var(--mint-dark, #2a7a4b)"), fontWeight: 600 }}>
+                      {dead ? "empty" : `${count} online`}
+                    </span>
+                  </button>
+                );
+              })}
               {filteredCountries.length === 0 && (
                 <div className="text-center text-sm py-6" style={{ color: "#666" }}>no matches</div>
               )}

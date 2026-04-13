@@ -1,8 +1,13 @@
 import "./globals.css";
 
+const SITE_URL = "https://randochat-jet.vercel.app";
+const SITE_TITLE = "RandoChat — random video chat";
+const SITE_DESC  = "1-on-1 random video chat with strangers. pick a country or go global.";
+
 export const metadata = {
-  title: "RandoChat — random video chat",
-  description: "1-on-1 random video chat with strangers. pick a country or go global.",
+  metadataBase: new URL(SITE_URL),
+  title: SITE_TITLE,
+  description: SITE_DESC,
   applicationName: "RandoChat",
   appleWebApp: {
     capable: true,
@@ -11,6 +16,19 @@ export const metadata = {
   },
   formatDetection: {
     telephone: false,
+  },
+  openGraph: {
+    title: "RandoChat",
+    description: "talk to strangers. one tap away.",
+    url: SITE_URL,
+    siteName: "RandoChat",
+    type: "website",
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "RandoChat",
+    description: "talk to strangers. one tap away.",
   },
 };
 
