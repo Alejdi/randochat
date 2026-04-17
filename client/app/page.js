@@ -630,11 +630,11 @@ export default function Page() {
           <span className="scribble text-xs -rotate-2 translate-y-[-2px] hidden sm:inline">talk to strangers</span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <span className="stamp" style={{ transform: "rotate(-1deg)" }}>
+          <span className="stamp">
             <span className="inline-block w-2 h-2 rounded-full mr-1 blip" style={{ background: "var(--mint)" }} />
             {online == null ? "…" : online.toLocaleString()} online
           </span>
-          <button onClick={share} className="stamp" style={{ transform: "rotate(1deg)", cursor: "pointer" }} title="share randochat">
+          <button onClick={share} className="stamp" style={{ cursor: "pointer" }} title="share randochat">
             ↗ share
           </button>
           <span className={tagClass}>{tagText}</span>
@@ -648,7 +648,6 @@ export default function Page() {
         <button
           onClick={() => setCountryModalOpen(true)}
           className="stamp shrink-0"
-          style={{ transform: "rotate(-0.8deg)" }}
           title="match by country"
         >
           {filter === "any"
@@ -658,7 +657,6 @@ export default function Page() {
         <button
           onClick={() => openCoinsModal("buy")}
           className="stamp shrink-0"
-          style={{ transform: "rotate(1.5deg)" }}
           title="coins — buy or cash out"
         >
           🪙 {coins}
@@ -667,10 +665,8 @@ export default function Page() {
 
       <section className="flex-1 min-h-0 mx-2 sm:mx-4 mb-2 sm:mb-3 grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-3 md:gap-4">
         {/* Remote panel — full width on mobile, left half on desktop */}
-        <div
-          className="relative overflow-hidden border-2 border-black rounded-[6px] min-h-0"
-          style={{ boxShadow: "6px 6px 0 0 #000", background: "#000" }}
-        >
+        <div className="video-frame relative min-h-0">
+          <div className="video-surface">
           <video
             ref={remoteVideoRef}
             autoPlay
@@ -679,9 +675,9 @@ export default function Page() {
           />
 
           {status !== "connected" && (
-            <div className="absolute inset-0 flex items-center justify-center text-center px-6">
+            <div className="absolute inset-0 flex items-center justify-center text-center px-6 z-10">
               <div>
-                <div className="font-display text-4xl md:text-5xl font-black italic mb-2" style={{ color: "var(--paper)" }}>
+                <div className="font-display text-4xl md:text-5xl font-black italic mb-2 letterpress" style={{ color: "var(--paper)" }}>
                   {status === "searching" ? "dialing…" : "who's out there?"}
                 </div>
                 <div className="scribble text-sm">
@@ -693,7 +689,7 @@ export default function Page() {
                 </div>
                 {status === "searching" && searchHint && filter !== "any" && (
                   <div className="mt-4 flex flex-col items-center gap-2">
-                    <span className="stamp" style={{ transform: "rotate(-1deg)", background: "var(--tomato)", color: "var(--paper)" }}>
+                    <span className="tag tag-warm">
                       no {flag(filter)} {countryName(filter)} online right now
                     </span>
                     <button
@@ -741,7 +737,7 @@ export default function Page() {
 
           {toast && (
             <div className="absolute top-3 left-1/2 -translate-x-1/2">
-              <span className="stamp" style={{ transform: "rotate(-1deg)" }}>{toast}</span>
+              <span className="stamp">{toast}</span>
             </div>
           )}
 
@@ -768,11 +764,18 @@ export default function Page() {
                     key={m.id}
                     className={`max-w-[85%] px-3 py-1.5 text-sm leading-snug break-words ${m.from === "me" ? "self-end" : "self-start"}`}
                     style={{
-                      background: m.from === "me" ? "var(--tomato)" : "var(--paper)",
-                      color: m.from === "me" ? "var(--paper)" : "var(--ink)",
-                      border: "2px solid var(--line)",
-                      borderRadius: 6,
-                      boxShadow: "2px 2px 0 0 var(--line)",
+                      background: m.from === "me"
+                        ? "linear-gradient(to bottom, var(--tomato-hi) 0%, var(--tomato-lo) 100%)"
+                        : "linear-gradient(to bottom, var(--paper-hi) 0%, var(--paper-lo) 100%)",
+                      color: m.from === "me" ? "var(--paper)" : "var(--ink-soft)",
+                      border: m.from === "me" ? "1px solid rgba(0,0,0,0.35)" : "1px solid rgba(0,0,0,0.25)",
+                      borderRadius: 14,
+                      boxShadow: m.from === "me"
+                        ? "inset 0 1px 0 rgba(255,255,255,0.4), inset 0 -2px 5px rgba(120,25,0,0.35), 0 2px 5px rgba(0,0,0,0.35)"
+                        : "inset 0 1px 0 rgba(255,255,255,0.6), inset 0 -1px 2px rgba(0,0,0,0.08), 0 2px 5px rgba(0,0,0,0.35)",
+                      textShadow: m.from === "me"
+                        ? "0 -1px 0 rgba(80,15,0,0.5)"
+                        : "0 1px 0 rgba(255,255,255,0.5)",
                       fontFamily: "Space Grotesk, sans-serif",
                       fontWeight: 500,
                     }}
@@ -822,38 +825,38 @@ export default function Page() {
               </form>
             </div>
           )}
+          </div>
         </div>
 
         {/* Local panel — desktop only, equal size to remote */}
-        <div
-          className="hidden md:block relative overflow-hidden border-2 border-black rounded-[6px] min-h-0"
-          style={{ boxShadow: "6px 6px 0 0 #000", background: "#000" }}
-        >
-          <video
-            ref={localVideoDesktopRef}
-            autoPlay
-            playsInline
-            muted
-            className="absolute inset-0 w-full h-full object-cover"
-            style={{ transform: "scaleX(-1)" }}
-          />
-          {!localStreamRef.current && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <div className="font-display text-3xl font-black italic" style={{ color: "var(--paper)" }}>
-                  that's you
+        <div className="video-frame hidden md:block relative min-h-0">
+          <div className="video-surface">
+            <video
+              ref={localVideoDesktopRef}
+              autoPlay
+              playsInline
+              muted
+              className="absolute inset-0 w-full h-full object-cover"
+              style={{ transform: "scaleX(-1)" }}
+            />
+            {!localStreamRef.current && (
+              <div className="absolute inset-0 flex items-center justify-center z-10">
+                <div className="text-center">
+                  <div className="font-display text-3xl font-black italic letterpress" style={{ color: "var(--paper)" }}>
+                    that&apos;s you
+                  </div>
+                  <div className="scribble text-xs mt-1">camera preview</div>
                 </div>
-                <div className="scribble text-xs mt-1">camera preview</div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </section>
 
       <footer className="px-3 sm:px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1 z-10">
         {installPrompt && !installDismissed && status === "idle" && (
           <div className="flex items-center justify-center gap-2 mb-2">
-            <span className="stamp" style={{ transform: "rotate(-0.6deg)" }}>
+            <span className="stamp">
               📱 install RandoChat
             </span>
             <button
@@ -913,7 +916,7 @@ export default function Page() {
 
       {coinsModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6" style={{ background: "rgba(15,13,12,0.88)" }}>
-          <div className="card w-full max-w-md flex flex-col" style={{ transform: "rotate(-0.5deg)", maxHeight: "92vh" }}>
+          <div className="card w-full max-w-md flex flex-col" style={{ maxHeight: "92vh" }}>
             <div className="p-5 pb-3">
               <div className="flex items-center justify-between">
                 <div className="font-display text-2xl font-black italic">your coins</div>
@@ -1131,7 +1134,7 @@ export default function Page() {
 
       {welcomeOpen && (
         <div className="fixed inset-0 z-[55] flex items-center justify-center p-6" style={{ background: "rgba(15,13,12,0.92)" }}>
-          <div className="card w-full max-w-sm p-6" style={{ transform: "rotate(-0.6deg)" }}>
+          <div className="card w-full max-w-sm p-6">
             <div className="font-display text-4xl font-black italic leading-none mb-1">
               welcome to <span style={{ color: "var(--tomato)" }}>RandoChat</span>
             </div>
@@ -1152,7 +1155,7 @@ export default function Page() {
 
       {countryModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{ background: "rgba(15,13,12,0.88)" }}>
-          <div className="card w-full max-w-sm p-5 flex flex-col" style={{ transform: "rotate(-0.5deg)", maxHeight: "80vh" }}>
+          <div className="card w-full max-w-sm p-5 flex flex-col" style={{ maxHeight: "80vh" }}>
             <div className="font-display text-2xl font-black italic mb-1">match by country</div>
             <div className="scribble text-xs mb-3">pick a country or keep it global</div>
             <input
@@ -1222,7 +1225,7 @@ export default function Page() {
 
       {nameModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{ background: "rgba(15,13,12,0.88)" }}>
-          <div className="card w-full max-w-sm p-6" style={{ transform: "rotate(-0.8deg)" }}>
+          <div className="card w-full max-w-sm p-6">
             <div className="font-display text-2xl font-black italic mb-1">pick a name</div>
             <div className="scribble text-xs mb-4">strangers will see this. no real names please.</div>
             <div className="flex items-center gap-2 mb-1">
@@ -1272,7 +1275,7 @@ export default function Page() {
 
       {bannedNotice && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-6" style={{ background: "rgba(15,13,12,0.95)" }}>
-          <div className="card w-full max-w-sm p-6 text-center" style={{ transform: "rotate(-0.5deg)" }}>
+          <div className="card w-full max-w-sm p-6 text-center">
             <div className="text-5xl mb-2">⛔</div>
             <h2 className="font-display text-2xl font-black italic mb-2">banned</h2>
             <p className="text-sm leading-relaxed" style={{ color: "#333" }}>{bannedNotice}</p>
@@ -1282,7 +1285,7 @@ export default function Page() {
 
       {permPrompt && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{ background: "rgba(15,13,12,0.88)" }}>
-          <div className="card w-full max-w-sm p-6 text-center" style={{ transform: "rotate(-0.8deg)" }}>
+          <div className="card w-full max-w-sm p-6 text-center">
             <div className="text-5xl mb-2">
               {permPrompt === "denied" ? "🚫" : permPrompt === "error" ? "⚠️" : permPrompt === "insecure" ? "🔒" : "🎥"}
             </div>
