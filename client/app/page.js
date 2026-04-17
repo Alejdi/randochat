@@ -47,6 +47,8 @@ export default function Page() {
   const [installDismissed, setInstallDismissed] = useState(false);
   const [coinsModalOpen, setCoinsModalOpen] = useState(false);
   const [coinsTab, setCoinsTab] = useState("buy"); // buy | cashout | history
+  const [facingMode, setFacingMode] = useState("user"); // "user" | "environment"
+  const [hasLocalStream, setHasLocalStream] = useState(false);
   const [cashoutAmount, setCashoutAmount] = useState("");
   const [cashoutMethod, setCashoutMethod] = useState("paypal");
   const [cashoutDestination, setCashoutDestination] = useState("");
@@ -300,11 +302,45 @@ export default function Page() {
       err.name = "InsecureContextError";
       throw err;
     }
-    const s = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    const s = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: facingMode } },
+      audio: true,
+    });
     localStreamRef.current = s;
     attachLocalStream(s);
+    setHasLocalStream(true);
     setPermPrompt(null);
     return s;
+  }
+
+  async function flipCamera() {
+    if (!localStreamRef.current) { showToast("start the camera first"); return; }
+    const newFacing = facingMode === "user" ? "environment" : "user";
+    let newVideoStream;
+    try {
+      newVideoStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { exact: newFacing } },
+        audio: false,
+      });
+    } catch {
+      showToast("no other camera found");
+      return;
+    }
+    const oldVideoTrack = localStreamRef.current.getVideoTracks()[0];
+    const newVideoTrack = newVideoStream.getVideoTracks()[0];
+
+    // Replace the video track on the peer connection if we're in a call
+    if (peerRef.current) {
+      try { peerRef.current.replaceTrack(oldVideoTrack, newVideoTrack, localStreamRef.current); }
+      catch (err) { console.warn("replaceTrack failed:", err); }
+    }
+
+    // Swap the video track inside the existing local stream so audio keeps flowing
+    localStreamRef.current.removeTrack(oldVideoTrack);
+    oldVideoTrack.stop();
+    localStreamRef.current.addTrack(newVideoTrack);
+    attachLocalStream(localStreamRef.current);
+    setFacingMode(newFacing);
   }
 
   async function requestPermissions() {
@@ -551,6 +587,7 @@ export default function Page() {
       localStreamRef.current.getTracks().forEach((t) => t.stop());
       localStreamRef.current = null;
       attachLocalStream(null);
+      setHasLocalStream(false);
     }
   }
 
@@ -712,8 +749,18 @@ export default function Page() {
             playsInline
             muted
             className="pip absolute bottom-2 right-2 w-[38vw] h-[28vh] max-w-[180px] max-h-[240px] object-cover md:hidden"
-            style={{ transform: "scaleX(-1)" }}
+            style={{ transform: facingMode === "user" ? "scaleX(-1)" : "scaleX(1)" }}
           />
+          {hasLocalStream && (
+            <button
+              onClick={flipCamera}
+              aria-label="flip camera"
+              title="flip camera"
+              className="flip-btn absolute bottom-4 right-[calc(38vw+14px)] md:hidden"
+            >
+              🔄
+            </button>
+          )}
 
           {giftFlash && (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -837,7 +884,7 @@ export default function Page() {
               playsInline
               muted
               className="absolute inset-0 w-full h-full object-cover"
-              style={{ transform: "scaleX(-1)" }}
+              style={{ transform: facingMode === "user" ? "scaleX(-1)" : "scaleX(1)" }}
             />
             {!localStreamRef.current && (
               <div className="absolute inset-0 flex items-center justify-center z-10">
@@ -848,6 +895,16 @@ export default function Page() {
                   <div className="scribble text-xs mt-1">camera preview</div>
                 </div>
               </div>
+            )}
+            {hasLocalStream && (
+              <button
+                onClick={flipCamera}
+                aria-label="flip camera"
+                title="flip camera"
+                className="flip-btn absolute top-3 right-3 z-10"
+              >
+                🔄
+              </button>
             )}
           </div>
         </div>
